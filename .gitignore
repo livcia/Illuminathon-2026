@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Pliki binarne
+cloudflared.exe
+
+# IDE / Edytory
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logi
+*.log

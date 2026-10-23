@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Illuminathon — Kamera</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #000;
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.2rem;
+      padding: 1.5rem;
+    }
+    h1 { font-size: 1.4rem; letter-spacing: 0.08em; opacity: 0.9; text-align: center; }
+    .cam-selection {
+      display: flex;
+      gap: 0.5rem;
+      width: 100%;
+      max-width: 420px;
+    }
+    .cam-btn {
+      flex: 1;
+      padding: 0.75em 0.5em;
+      font-size: 0.95rem;
+      border: 1px solid #444;
+      border-radius: 8px;
+      background: #181818;
+      color: #aaa;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .cam-btn.active {
+      background: #e63;
+      color: #fff;
+      border-color: #f74;
+      font-weight: 600;
+      box-shadow: 0 0 12px rgba(238, 102, 51, 0.4);
+    }
+    #status {
+      font-size: 0.9rem;
+      padding: 0.5em 1.2em;
+      border-radius: 999px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      min-width: 240px;
+      text-align: center;
+      transition: background 0.3s;
+    }
+    #status.ok   { background: #0a2a0a; border-color: #2a7a2a; color: #6ef06e; }
+    #status.err  { background: #2a0a0a; border-color: #7a2a2a; color: #f06e6e; }
+    video {
+      width: 100%;
+      max-width: 480px;
+      border-radius: 8px;
+      border: 1px solid #222;
+      background: #111;
+      transform: scaleX(-1);
+    }
+    #btn {
+      width: 100%;
+      max-width: 420px;
+      padding: 0.85em 1.5em;
+      font-size: 1.05rem;
+      border: none;
+      border-radius: 8px;
+      background: #e63;
+      color: #fff;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    #btn:hover  { background: #f74; }
+    #btn:active { background: #c52; }
+    #btn:disabled { background: #333; color: #777; cursor: default; }
+  </style>
+</head>
+<body>
+  <h1>ILLUMINATHON</h1>
+
+  <div class="cam-selection" id="camSelection">
+    <button type="button" class="cam-btn" data-cam="1" onclick="selectCam(1)">Kamera 1 (R)</button>
+    <button type="button" class="cam-btn" data-cam="2" onclick="selectCam(2)">Kamera 2 (G)</button>
+    <button type="button" class="cam-btn" data-cam="3" onclick="selectCam(3)">Kamera 3 (B)</button>
+  </div>
+
+  <div id="status">Wybierz kamerę i kliknij Start</div>
+  <video id="preview" autoplay muted playsinline webkit-playsinline></video>
+  <button id="btn" onclick="startStream()">▶ Start kamery 1 (R)</button>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const CAM_NAMES = {1: '1 (Red / Czerwony)', 2: '2 (Green / Zielony)', 3: '3 (Blue / Niebieski)'};
+    let selectedCam = parseInt(urlParams.get('cam') || '1', 10);
+    if (![1, 2, 3].includes(selectedCam)) selectedCam = 1;
+
+    function updateCamUI() {
+      document.querySelectorAll('.cam-btn').forEach(btn => {
+        const c = parseInt(btn.dataset.cam, 10);
+        btn.classList.toggle('active', c === selectedCam);
+      });
+      const btn = document.getElementById('btn');
+      if (!btn.disabled) {
+        btn.textContent = `▶ Start kamery ${CAM_NAMES[selectedCam]}`;
+      }
+    }
+
+    function selectCam(cam) {
+      if (document.getElementById('btn').disabled) return;
+      selectedCam = cam;
+      updateCamUI();
+      setStatus(`Gotowy do streamingu jako Kamera ${selectedCam}`);
+    }
+
+    updateCamUI();
+
+    let ws, pc, mediaStream;
+
+    function setStatus(msg, cls) {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      el.className = cls || '';
+    }
+
+    function resetControls(buttonText) {
+      const startBtn = document.getElementById('btn');
+      startBtn.disabled = false;
+      startBtn.textContent = buttonText || `▶ Wznów kamerę ${selectedCam}`;
+      document.querySelectorAll('.cam-btn').forEach(b => b.style.pointerEvents = 'auto');
+    }
+
+    async function startStream() {
+      const startBtn = document.getElementById('btn');
+      startBtn.disabled = true;
+      document.querySelectorAll('.cam-btn').forEach(b => b.style.pointerEvents = 'none');
+      setStatus('Proszę zezwolić na dostęp do kamery…');
+
+      // Blokada wygaszania ekranu telefonu w trakcie streamingu
+      if ('wakeLock' in navigator) {
+        try { await navigator.wakeLock.request('screen'); } catch (e) {}
+      }
+
+      if (!mediaStream) {
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } },
+            audio: false
+          });
+        } catch (e) {
+          setStatus('Błąd kamery: ' + e.message, 'err');
+          resetControls(`▶ Spróbuj ponownie (Kamera ${selectedCam})`);
+          return;
+        }
+      }
+
+      document.getElementById('preview').srcObject = mediaStream;
+      setStatus(`Łączenie z serwerem (Kamera ${selectedCam})…`);
+
+      if (ws) { try { ws.close(); } catch (e) {} }
+      if (pc) { try { pc.close(); } catch (e) {} }
+
+      const wsProtocol = (location.protocol === 'https:' ? 'wss:' : 'ws:');
+      const wsUrl = `${wsProtocol}//${location.host}/ws?cam=${selectedCam}`;
+
+      ws = new WebSocket(wsUrl);
+      ws.onerror = () => {
+        setStatus('Błąd WebSocket', 'err');
+        resetControls(`▶ Połącz ponownie (Kamera ${selectedCam})`);
+      };
+      ws.onclose = () => {
+        setStatus(`Kamera ${selectedCam}: rozłączono`, 'err');
+        resetControls(`▶ Wznów (Kamera ${selectedCam})`);
+      };
+
+      ws.onopen = async () => {
+        pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        });
+
+        mediaStream.getTracks().forEach(track => pc.addTrack(track, mediaStream));
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        pc.onicecandidate = (e) => {
+          if (e.candidate === null) {
+            ws.send(JSON.stringify({
+              type: 'offer',
+              sdp: pc.localDescription.sdp,
+              cam: selectedCam
+            }));
+            setStatus(`Kamera ${selectedCam}: oferta wysłana, negocjacja…`);
+          }
+        };
+
+        pc.onconnectionstatechange = () => {
+          const s = pc.connectionState;
+          if (s === 'connected') {
+            setStatus(`✓ Kamera ${selectedCam}: streaming aktywny`, 'ok');
+          } else if (s === 'disconnected' || s === 'failed') {
+            setStatus(`Kamera ${selectedCam}: utracono połączenie`, 'err');
+            resetControls(`▶ Połącz ponownie (Kamera ${selectedCam})`);
+          }
+        };
+      };
+
+      ws.onmessage = async (evt) => {
+        const data = JSON.parse(evt.data);
+        if (data.type === 'answer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(data));
+          setStatus(`Kamera ${selectedCam}: negocjacja ICE…`);
+        }
+      };
+    }
+  </script>
+</body>
+</html>
